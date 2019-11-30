@@ -28,7 +28,7 @@ test! {
     type Response = SqlQueryResponse;
 
     // Ensure the index doesn't exist
-    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Item = (), Error = Error>> {
+    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Output = Result<(), Error>>> {
         let delete_res = client.index(Doc::static_index()).delete().send();
 
         let index_reqs = future::join_all((0..10).map(move |i| {
@@ -46,7 +46,7 @@ test! {
     fn request(
         &self,
         client: AsyncClient,
-    ) -> Box<dyn Future<Item = Self::Response, Error = Error>> {
+    ) -> Box<dyn Future<Output = Result<Self::Response, Error>>> {
         let res = client
             .sql_query(&format!("select * from {}", Doc::static_index()))
             .send();

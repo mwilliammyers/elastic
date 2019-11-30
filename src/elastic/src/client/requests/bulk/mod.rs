@@ -11,11 +11,12 @@ use std::{
     time::Duration,
 };
 
-use futures::Future;
 use serde::{
     de::DeserializeOwned,
     ser::Serialize,
 };
+
+use futures::TryFutureExt;
 
 use crate::{
     client::{

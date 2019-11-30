@@ -2,7 +2,7 @@
 Builders for ping requests.
 */
 
-use futures::Future;
+use futures::TryFutureExt;
 
 use crate::{
     client::{

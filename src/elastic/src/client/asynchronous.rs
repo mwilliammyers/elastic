@@ -1,25 +1,18 @@
 use fluent_builder::SharedFluentBuilder;
-use futures::Future;
 use reqwest::r#async::Client as AsyncHttpClient;
-use std::{
-    error::Error as StdError,
-    sync::Arc,
-};
+use std::sync::Arc;
 use tokio_threadpool::ThreadPool;
 
 use crate::{
     client::Client,
     error::Error,
-    http::{
-        sender::{
-            sniffed_nodes::SniffedNodesBuilder,
-            AsyncPreSend,
-            AsyncSender,
-            NodeAddress,
-            NodeAddressesBuilder,
-            PreRequestParams,
-        },
-        AsyncHttpRequest,
+    http::sender::{
+        sniffed_nodes::SniffedNodesBuilder,
+        AsyncPreSend,
+        AsyncSender,
+        NodeAddress,
+        NodeAddressesBuilder,
+        PreRequestParams,
     },
 };
 
@@ -247,27 +240,28 @@ impl AsyncClientBuilder {
         self
     }
 
-    /**
-    Specify a function to tweak a raw request before sending.
+    // FIXME: add this back
+    // /**
+    // Specify a function to tweak a raw request before sending.
 
-    This function will be applied to all outgoing requests and gives you the chance to perform operations the require the complete raw request,
-    such as request signing.
-    Prefer the `params` method on the client or individual requests where possible.
-    */
-    pub fn pre_send_raw(
-        mut self,
-        pre_send: impl Fn(
-                &mut AsyncHttpRequest,
-            )
-                -> Box<dyn Future<Item = (), Error = Box<dyn StdError + Send + Sync>> + Send>
-            + Send
-            + Sync
-            + 'static,
-    ) -> Self {
-        self.pre_send = Some(Arc::new(pre_send));
+    // This function will be applied to all outgoing requests and gives you the chance to perform operations the require the complete raw request,
+    // such as request signing.
+    // Prefer the `params` method on the client or individual requests where possible.
+    // */
+    // pub fn pre_send_raw(
+    //     mut self,
+    //     pre_send: impl Fn(
+    //             &mut AsyncHttpRequest,
+    //         ) -> Box<
+    //             dyn Future<Output = Box<dyn Result<(), Box<dyn StdError + Send + Sync>> + Send>>,
+    //         > + Send
+    //         + Sync
+    //         + 'static,
+    // ) -> Self {
+    //     self.pre_send = Some(Arc::new(pre_send));
 
-        self
-    }
+    //     self
+    // }
 
     /** Use the given `reqwest::Client` for sending requests. */
     pub fn http_client(mut self, client: AsyncHttpClient) -> Self {

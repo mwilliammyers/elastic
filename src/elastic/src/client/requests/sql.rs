@@ -4,7 +4,7 @@ Builders for [sql queries][sql].
 [sql]: https://www.elastic.co/guide/en/elasticsearch/reference/current/sql-rest.html
 */
 
-use futures::Future;
+use futures::TryFutureExt;
 
 use crate::{
     client::{

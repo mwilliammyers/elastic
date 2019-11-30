@@ -1,20 +1,20 @@
+use std::{
+    error::Error as StdError,
+    sync::Arc,
+};
+
 use futures::{
     future::{
         lazy,
         Either,
-        FutureResult,
     },
+    task::Poll,
     Future,
-    IntoFuture,
-    Poll,
+    TryFutureExt,
 };
 use reqwest::r#async::{
     Client as AsyncHttpClient,
     RequestBuilder as AsyncHttpRequestBuilder,
-};
-use std::{
-    error::Error as StdError,
-    sync::Arc,
 };
 use tokio_threadpool::{
     SpawnHandle,
@@ -52,7 +52,7 @@ use crate::{
 
 pub(crate) type AsyncPreSend = dyn Fn(
         &mut AsyncHttpRequest,
-    ) -> Box<dyn Future<Item = (), Error = Box<dyn StdError + Send + Sync>> + Send>
+    ) -> Box<dyn Future<Output = Result<(), Box<dyn StdError + Send + Sync>>> + Send>
     + Send
     + Sync;
 
@@ -70,7 +70,7 @@ impl AsyncSender {
     pub(crate) fn maybe_async<TFn, TResult>(
         &self,
         f: TFn,
-    ) -> Either<SpawnHandle<TResult, Error>, FutureResult<TResult, Error>>
+    ) -> Either<SpawnHandle<TResult, Error>, dyn Future<Output = Result<TResult, Error>>>
     where
         TFn: FnOnce() -> Result<TResult, Error> + Send + 'static,
         TResult: Send + 'static,
@@ -78,7 +78,7 @@ impl AsyncSender {
         if let Some(ref ser_pool) = self.serde_pool {
             Either::A(ser_pool.spawn_handle(lazy(f)))
         } else {
-            Either::B(f().into_future())
+            Either::B(f().next())
         }
     }
 }
@@ -111,7 +111,7 @@ impl Sender for AsyncSender {
         );
 
         let params_future = match params {
-            SendableRequestParams::Value(params) => Either::A(Ok(params).into_future()),
+            SendableRequestParams::Value(params) => Either::A(Ok(params).next()),
             SendableRequestParams::Builder { params, builder } => {
                 let params = params.into().log_err(move |e| {
                     error!(
@@ -146,10 +146,10 @@ impl Sender for AsyncSender {
                     pre_send(&mut req)
                         .map_err(error::wrapped)
                         .map_err(error::request)
-                        .and_then(move |_| Ok(req).into_future()),
+                        .and_then(move |_| Ok(req).next()),
                 )
             } else {
-                Either::B(Ok(req).into_future())
+                Either::B(Ok(req).next())
             }
         });
 
@@ -178,7 +178,7 @@ impl Sender for AsyncSender {
                         correlation_id,
                         res.status()
                     );
-                    async_response(res, serde_pool).into_future()
+                    async_response(res, serde_pool).next()
                 })
                 .log_err(move |e| {
                     error!(
@@ -197,7 +197,7 @@ impl NextParams for NodeAddresses<AsyncSender> {
 
     fn next(&self) -> Self::Params {
         match self.inner {
-            NodeAddressesInner::Static(ref nodes) => PendingParams::new(nodes.next().into_future()),
+            NodeAddressesInner::Static(ref nodes) => PendingParams::new(nodes.next().next()),
             NodeAddressesInner::Sniffed(ref sniffer) => PendingParams::new(sniffer.next()),
         }
     }
@@ -205,13 +205,13 @@ impl NextParams for NodeAddresses<AsyncSender> {
 
 /** A future returned by calling `next` on an async set of `NodeAddresses`. */
 pub struct PendingParams {
-    inner: Box<dyn Future<Item = RequestParams, Error = Error> + Send>,
+    inner: Box<dyn Future<Output = Result<RequestParams, Error>> + Send>,
 }
 
 impl PendingParams {
     fn new<F>(fut: F) -> Self
     where
-        F: Future<Item = RequestParams, Error = Error> + Send + 'static,
+        F: Future<Output = Result<RequestParams, Error>> + Send + 'static,
     {
         PendingParams {
             inner: Box::new(fut),
@@ -220,17 +220,16 @@ impl PendingParams {
 }
 
 impl Future for PendingParams {
-    type Item = RequestParams;
-    type Error = Error;
+    type Output = Result<RequestParams, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Self::Output> {
         self.inner.poll()
     }
 }
 
 impl From<RequestParams> for PendingParams {
     fn from(params: RequestParams) -> Self {
-        PendingParams::new(Ok(params).into_future())
+        PendingParams::new(Ok(params).next())
     }
 }
 
@@ -260,13 +259,13 @@ fn build_reqwest(client: &AsyncHttpClient, req: AsyncHttpRequest) -> AsyncHttpRe
 
 /** A future returned by calling `send` on an `AsyncSender`. */
 pub struct PendingResponse {
-    inner: Box<dyn Future<Item = AsyncResponseBuilder, Error = Error> + Send>,
+    inner: Box<dyn Future<Output = Result<AsyncResponseBuilder, Error>> + Send>,
 }
 
 impl PendingResponse {
     fn new<F>(fut: F) -> Self
     where
-        F: Future<Item = AsyncResponseBuilder, Error = Error> + Send + 'static,
+        F: Future<Output = Result<AsyncResponseBuilder, Error>> + Send + 'static,
     {
         PendingResponse {
             inner: Box::new(fut),
@@ -275,10 +274,9 @@ impl PendingResponse {
 }
 
 impl Future for PendingResponse {
-    type Item = AsyncResponseBuilder;
-    type Error = Error;
+    type Output = Result<AsyncResponseBuilder, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Self::Output> {
         self.inner.poll()
     }
 }
@@ -293,10 +291,9 @@ where
     F: Future,
     L: FnOnce(&F::Error),
 {
-    type Item = F::Item;
-    type Error = F::Error;
+    type Output = Result<F::Item, F::Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Self::Output> {
         match self.future.poll() {
             Err(e) => {
                 let log = self.log.take().expect("attempted to poll log twice");
@@ -319,7 +316,7 @@ where
 
 impl<F, T, E> LogErr<E> for F
 where
-    F: Future<Item = T, Error = E>,
+    F: Future<Output = Result<T, E>>,
 {
     fn log_err<L>(self, log: L) -> PendingLogErr<F, L>
     where

@@ -4,7 +4,7 @@ Builders for [open index requests][docs-open-index].
 [docs-open-index]: https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-open-close.html
 */
 
-use futures::Future;
+use futures::TryFutureExt;
 
 use crate::{
     client::{

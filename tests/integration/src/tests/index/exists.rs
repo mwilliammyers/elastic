@@ -12,7 +12,7 @@ test! {
     type Response = IndicesExistsResponse;
 
     // Ensure the index exists
-    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Item = (), Error = Error>> {
+    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Output = Result<(), Error>>> {
         let create_res = client.index(INDEX).create().send().map(|_| ());
 
         Box::new(create_res)
@@ -22,7 +22,7 @@ test! {
     fn request(
         &self,
         client: AsyncClient,
-    ) -> Box<dyn Future<Item = Self::Response, Error = Error>> {
+    ) -> Box<dyn Future<Output = Result<Self::Response, Error>>> {
         let res = client.index(INDEX).exists().send();
 
         Box::new(res)

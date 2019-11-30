@@ -23,10 +23,6 @@ This means our `SniffedNodes` structure looks completely different in synchronou
 It's effectively a rewrite.
 */
 
-use futures::{
-    Future,
-    IntoFuture,
-};
 use std::{
     sync::{
         Arc,
@@ -36,6 +32,12 @@ use std::{
         Duration,
         Instant,
     },
+};
+
+use futures::{
+    Future,
+    FutureExt,
+    TryFutureExt,
 };
 use url::Url;
 
@@ -106,15 +108,15 @@ impl<TSender> SniffedNodes<TSender> {
     fn async_next<TRefresh, TRefreshFuture>(
         &self,
         refresh: TRefresh,
-    ) -> Box<dyn Future<Item = RequestParams, Error = Error> + Send>
+    ) -> Box<dyn Future<Output = Result<RequestParams, Error>>>
     where
         TRefresh: Fn(
             SendableRequest<NodesInfoRequest<'static>, RequestParams, DefaultBody>,
         ) -> TRefreshFuture,
-        TRefreshFuture: Future<Item = NodesInfoResponse, Error = Error> + Send + 'static,
+        TRefreshFuture: Future<Output = Result<NodesInfoResponse, Error>> + Send + 'static,
     {
         if let Some(address) = self.next_or_start_refresh() {
-            return Box::new(address.into_future());
+            return Box::new(address.next());
         }
 
         // Perform the refresh
@@ -338,7 +340,7 @@ impl SniffedNodesInner {
 impl<TSender> private::Sealed for SniffedNodes<TSender> {}
 
 impl NextParams for SniffedNodes<AsyncSender> {
-    type Params = Box<dyn Future<Item = RequestParams, Error = Error> + Send>;
+    type Params = Box<dyn Future<Output = Result<RequestParams, Error>>>;
 
     fn next(&self) -> Self::Params {
         self.async_next(|req| {
@@ -448,7 +450,7 @@ mod tests {
             .async_next(move |_| {
                 assert_refreshing_equal(&nodes_while_refreshing, true);
 
-                Ok(expected_nodes()).into_future()
+                Ok(expected_nodes()).next()
             })
             .wait();
 
@@ -468,7 +470,7 @@ mod tests {
             .async_next(move |_| {
                 assert_refreshing_equal(&nodes_while_refreshing, true);
 
-                Ok(empty_nodes()).into_future()
+                Ok(empty_nodes()).next()
             })
             .wait();
 
@@ -488,7 +490,7 @@ mod tests {
             .async_next(move |_| {
                 assert_refreshing_equal(&nodes_while_refreshing, true);
 
-                Err(error::test()).into_future()
+                Err(error::test()).next()
             })
             .wait();
 

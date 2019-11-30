@@ -24,7 +24,7 @@ test! {
     type Response = SearchResponse<Doc>;
 
     // Ensure the index doesn't exist
-    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Item = (), Error = Error>> {
+    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Output = Result<(), Error>>> {
         let delete_res = client.index(Doc::static_index()).delete().send();
 
         let index_reqs = future::join_all((0..10).map(move |_| {
@@ -42,7 +42,7 @@ test! {
     fn request(
         &self,
         client: AsyncClient,
-    ) -> Box<dyn Future<Item = Self::Response, Error = Error>> {
+    ) -> Box<dyn Future<Output = Result<Self::Response, Error>>> {
         let res = client
             .search()
             .index(Doc::static_index())

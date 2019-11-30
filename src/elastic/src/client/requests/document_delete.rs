@@ -4,8 +4,9 @@ Builders for [delete document requests][docs-delete].
 [docs-delete]: http://www.elastic.co/guide/en/elasticsearch/reference/current/docs-delete.html
 */
 
-use futures::Future;
 use std::marker::PhantomData;
+
+use futures::TryFutureExt;
 
 use crate::{
     client::{

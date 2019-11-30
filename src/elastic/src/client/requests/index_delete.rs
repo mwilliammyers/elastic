@@ -4,7 +4,7 @@ Builders for [delete index requests][docs-delete-index].
 [docs-delete-index]: https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-delete-index.html
 */
 
-use futures::Future;
+use futures::TryFutureExt;
 
 use crate::{
     client::{

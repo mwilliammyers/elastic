@@ -4,7 +4,7 @@ Builders for [index exists requests][docs-index-exists].
 [docs-index-exists]: https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-exists.html
 */
 
-use futures::Future;
+use futures::TryFutureExt;
 
 use crate::{
     client::{

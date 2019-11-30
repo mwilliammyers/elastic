@@ -4,9 +4,10 @@ Builders for [get document requests][docs-get].
 [docs-get]: http://www.elastic.co/guide/en/elasticsearch/reference/current/docs-get.html
 */
 
-use futures::Future;
-use serde::de::DeserializeOwned;
 use std::marker::PhantomData;
+
+use futures::TryFutureExt;
+use serde::de::DeserializeOwned;
 
 use crate::{
     client::{

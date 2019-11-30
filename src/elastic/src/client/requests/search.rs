@@ -4,7 +4,8 @@ Builders for [search requests][docs-search].
 [docs-search]: https://www.elastic.co/guide/en/elasticsearch/reference/current/search-search.html
 */
 
-use futures::Future;
+use futures::TryFutureExt;
+
 use serde::de::DeserializeOwned;
 use std::marker::PhantomData;
 

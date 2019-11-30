@@ -3,10 +3,10 @@ Builders for [put mapping requests][docs-mapping].
 
 [docs-mapping]: https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html
 */
-
-use futures::Future;
-use serde_json;
 use std::marker::PhantomData;
+
+use futures::TryFutureExt;
+use serde_json;
 
 use crate::{
     client::{

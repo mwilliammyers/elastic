@@ -4,10 +4,11 @@ Builders for [update document requests][docs-update].
 [docs-update]: http://www.elastic.co/guide/en/elasticsearch/reference/current/docs-update.html
 */
 
-use futures::Future;
+use std::marker::PhantomData;
+
+use futures::TryFutureExt;
 use serde::ser::Serialize;
 use serde_json;
-use std::marker::PhantomData;
 
 use crate::{
     client::{

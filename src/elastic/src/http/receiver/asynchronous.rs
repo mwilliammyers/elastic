@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use futures::{
     future::lazy,
+    task::Poll,
     Future,
-    Poll,
-    Stream,
 };
 use reqwest::r#async::Response as RawResponse;
 use serde::de::DeserializeOwned;
@@ -147,13 +146,13 @@ impl AsyncResponseBuilder {
 
 /** A future returned by calling `into_response`. */
 pub struct IntoResponse<T> {
-    inner: Box<dyn Future<Item = T, Error = Error> + Send>,
+    inner: Box<dyn Future<Output = Result<T, Error>> + Send>,
 }
 
 impl<T> IntoResponse<T> {
     fn new<F>(fut: F) -> Self
     where
-        F: Future<Item = T, Error = Error> + Send + 'static,
+        F: Future<Output = Result<T, Error>> + Send + 'static,
     {
         IntoResponse {
             inner: Box::new(fut),
@@ -165,10 +164,9 @@ impl<T> Future for IntoResponse<T>
 where
     T: IsOk + DeserializeOwned + Send + 'static,
 {
-    type Item = T;
-    type Error = Error;
+    type Output = Result<T, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Self::Output> {
         self.inner.poll()
     }
 }

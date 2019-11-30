@@ -23,7 +23,7 @@ test! {
     type Response = Vec<OkItem>;
 
     // Ensure the index doesn't exist
-    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Item = (), Error = Error>> {
+    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Output = Result<(), Error>>> {
         let delete_res = client
             .index(Doc::static_index())
             .delete()
@@ -37,7 +37,7 @@ test! {
     fn request(
         &self,
         client: AsyncClient,
-    ) -> Box<dyn Future<Item = Self::Response, Error = Error>> {
+    ) -> Box<dyn Future<Output = Result<Self::Response, Error>>> {
         let (bulk_stream, bulk_responses) = client.bulk_stream().body_size_bytes(1).build();
 
         let ops = (0..20)

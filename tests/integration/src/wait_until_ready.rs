@@ -21,7 +21,10 @@ pub fn call(client: AsyncClient, timeout_secs: u64) -> Result<(), Error> {
     }
 }
 
-fn call_future(client: AsyncClient, timeout_secs: u64) -> Box<dyn Future<Item = (), Error = Done>> {
+fn call_future(
+    client: AsyncClient,
+    timeout_secs: u64,
+) -> Box<dyn Future<Output = Result<(), Done>>> {
     println!("waiting ~{}s until the cluster is ready...", timeout_secs);
 
     let start = std::time::Instant::now();

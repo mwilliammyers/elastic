@@ -73,7 +73,7 @@ fn run() -> Result<(), Box<dyn StdError>> {
     Ok(())
 }
 
-fn ensure_indexed(client: AsyncClient, doc: MyType) -> Box<dyn Future<Item = (), Error = Error>> {
+fn ensure_indexed(client: AsyncClient, doc: MyType) -> Box<dyn Future<Output = Result<(), Error>>> {
     let get_res = client
         .document::<MyType>()
         .get(doc.id.clone())
@@ -86,7 +86,7 @@ fn ensure_indexed(client: AsyncClient, doc: MyType) -> Box<dyn Future<Item = (),
             Ok(Some(doc)) => {
                 println!("document already indexed: {:?}", doc);
 
-                Box::new(Ok(()).into_future())
+                Box::new(Ok(()).next())
             }
             // The index exists, but the doc wasn't found: map and index
             Ok(None) => {
@@ -103,14 +103,14 @@ fn ensure_indexed(client: AsyncClient, doc: MyType) -> Box<dyn Future<Item = (),
                 Box::new(put_doc)
             }
             // Something went wrong
-            Err(e) => Box::new(Err(e).into_future()),
+            Err(e) => Box::new(Err(e).next()),
         }
     });
 
     Box::new(put_doc)
 }
 
-fn put_index(client: AsyncClient) -> Box<dyn Future<Item = (), Error = Error>> {
+fn put_index(client: AsyncClient) -> Box<dyn Future<Output = Result<(), Error>>> {
     let create_index = client.index(MyType::static_index()).create().send();
 
     let put_mapping = client.document::<MyType>().put_mapping().send().map(|_| ());
@@ -118,7 +118,7 @@ fn put_index(client: AsyncClient) -> Box<dyn Future<Item = (), Error = Error>> {
     Box::new(create_index.and_then(|_| put_mapping))
 }
 
-fn put_doc(client: AsyncClient, doc: MyType) -> Box<dyn Future<Item = (), Error = Error>> {
+fn put_doc(client: AsyncClient, doc: MyType) -> Box<dyn Future<Output = Result<(), Error>>> {
     let index_doc = client
         .document()
         .index(doc)
@@ -132,7 +132,7 @@ fn put_doc(client: AsyncClient, doc: MyType) -> Box<dyn Future<Item = (), Error 
 fn search(
     client: AsyncClient,
     query: &'static str,
-) -> Box<dyn Future<Item = SearchResponse<MyType>, Error = Error>> {
+) -> Box<dyn Future<Output = Result<SearchResponse<MyType>, Error>>> {
     let search = client
         .search()
         .index(MyType::static_index())

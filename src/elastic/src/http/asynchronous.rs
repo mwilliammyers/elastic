@@ -10,7 +10,7 @@ use std::{
 };
 
 use futures::{
-    Poll,
+    task::Poll,
     Stream,
 };
 use reqwest::r#async::{
@@ -30,7 +30,7 @@ use crate::{
     },
 };
 
-pub use reqwest::r#async::Chunk as AsyncChunk;
+pub use bytes::Bytes as AsyncChunk;
 
 /** A http request with an asynchronous body; */
 pub type AsyncHttpRequest = HttpRequest<AsyncBody>;
@@ -141,10 +141,9 @@ impl AsyncHttpResponse {
 }
 
 impl Stream for AsyncHttpResponse {
-    type Item = AsyncChunk;
-    type Error = Error;
+    type Item = Result<AsyncChunk, Error>;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_next(&mut self) -> Poll<Option<Self::Item>> {
         self.1
             .body_mut()
             .poll()

@@ -21,10 +21,8 @@ use channel::{
 };
 use fluent_builder::FluentBuilder;
 use futures::{
-    Async,
-    AsyncSink,
+    task::Poll,
     Future,
-    Poll,
     Sink,
     Stream,
 };
@@ -32,7 +30,10 @@ use serde::{
     de::DeserializeOwned,
     ser::Serialize,
 };
-use tokio::timer::Delay;
+use tokio::timer::{
+    self,
+    Delay,
+};
 
 use super::{
     BulkOperation,
@@ -146,7 +147,7 @@ pub(super) struct Timeout {
 
 impl Timeout {
     pub(super) fn new(duration: Duration) -> Self {
-        let delay = Delay::new(Instant::now() + duration);
+        let delay = timer::delay(Instant::now() + duration);
 
         Timeout { duration, delay }
     }
@@ -157,10 +158,9 @@ impl Timeout {
 }
 
 impl Future for Timeout {
-    type Item = ();
-    type Error = Error;
+    type Output = Result<(), Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Self::Output> {
         self.delay.poll().map_err(error::request)
     }
 }
@@ -258,60 +258,56 @@ impl SenderBody {
     }
 }
 
-impl<TDocument, TResponse> Sink for BulkSender<TDocument, TResponse>
+impl<TDocument, TResponse> Sink<BulkOperation<TDocument>> for BulkSender<TDocument, TResponse>
 where
     TDocument: Serialize + Send + 'static,
     TResponse: DeserializeOwned + IsOk + Send + 'static,
 {
-    type SinkItem = BulkOperation<TDocument>;
-    type SinkError = Error;
+    type Error = Error;
 
-    fn start_send(
-        &mut self,
-        item: Self::SinkItem,
-    ) -> Result<AsyncSink<Self::SinkItem>, Self::SinkError> {
+    fn start_send(&mut self, item: BulkOperation<TDocument>) -> Poll<Result<(), Self::Error>> {
         match self.timeout.poll() {
             // Only respect the timeout if the body is not empty
-            Ok(Async::Ready(())) if !self.body.is_empty() => {
-                return match self.poll_complete() {
-                    Ok(_) => Ok(AsyncSink::NotReady(item)),
-                    Err(e) => Err(e),
+            Ok(Poll::Ready(())) if !self.body.is_empty() => {
+                return match self.poll_flush() {
+                    Ok(_) => Poll::Pending(Ok(item)),
+                    Err(e) => Poll::Pending(Err(e)),
                 };
             }
             // Continue
-            Ok(Async::Ready(_)) | Ok(Async::NotReady) => (),
+            Ok(Poll::Ready(_)) | Ok(Poll::Pending) => (),
             Err(e) => return Err(error::request(e)),
         }
 
         if self.body.has_capacity() {
             self.body.push(item).map_err(error::request)?;
-            Ok(AsyncSink::Ready)
+            Poll::Ready(Ok(()))
         } else {
-            match self.poll_complete() {
-                Ok(_) => Ok(AsyncSink::NotReady(item)),
-                Err(e) => Err(e),
+            match self.poll_flush() {
+                Ok(_) => Poll::Pending(Ok(item)),
+                Err(e) => Poll::Pending(Err(e)),
             }
         }
     }
 
-    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+    fn poll_flush(&mut self) -> Poll<Result<(), Self::Error>> {
         let in_flight = match self.in_flight {
             // The `Sender` is ready to send another request
             BulkSenderInFlight::ReadyToSend => {
                 match self.timeout.poll() {
                     // If the timeout hasn't expired and the body isn't full then we're not ready
-                    Ok(Async::NotReady) if !self.body.is_full() && !self.body.is_empty() => {
-                        return Ok(Async::NotReady);
+                    Ok(Poll::Pending) if !self.body.is_full() && !self.body.is_empty() => {
+                        return Ok(Poll::Pending);
                     }
                     // Continue
-                    Ok(Async::NotReady) => (),
+                    Ok(Poll::Pending) => (),
                     // Restart the expired timer
-                    Ok(Async::Ready(())) => self.timeout.restart(),
+                    Ok(Poll::Ready(())) => self.timeout.restart(),
                     Err(e) => return Err(error::request(e)),
                 }
 
                 if self.body.is_empty() {
-                    return Ok(Async::Ready(()));
+                    return Ok(Poll::Ready(()));
                 }
 
                 debug!("Elasticsearch Bulk Stream: sending a bulk request");
@@ -325,19 +321,19 @@ where
             }
             // A request is pending
             BulkSenderInFlight::Pending(ref mut pending) => {
-                let response = try_ready!(pending.poll());
+                let response = ready!(pending.poll());
                 BulkSenderInFlight::Transmitting(Some(response))
             }
             // A response is transmitting
             BulkSenderInFlight::Transmitting(ref mut response) => {
                 if let Some(item) = response.take() {
                     match self.tx.start_send(item) {
-                        Ok(AsyncSink::Ready) => BulkSenderInFlight::Transmitted,
-                        Ok(AsyncSink::NotReady(item)) => {
+                        Ok(Poll::Ready) => BulkSenderInFlight::Transmitted,
+                        Ok(Poll::Pending(item)) => {
                             debug!("Elasticsearch Bulk Stream: waiting for receiver to accept bulk response");
 
                             *response = Some(item);
-                            return Ok(Async::NotReady);
+                            return Ok(Poll::Pending);
                         }
                         Err(e) => return Err(e),
                     }
@@ -347,49 +343,45 @@ where
             }
             // The request has completed
             BulkSenderInFlight::Transmitted => {
-                try_ready!(self.tx.poll_complete());
+                ready!(self.tx.poll_flush());
                 BulkSenderInFlight::ReadyToSend
             }
         };
 
         self.in_flight = in_flight;
-        self.poll_complete()
+        self.poll_flush()
     }
 
-    fn close(&mut self) -> Poll<(), Self::SinkError> {
-        try_ready!(self.poll_complete());
+    fn poll_close(&mut self) -> Poll<Result<(), Self::Error>> {
+        ready!(self.poll_flush());
         self.tx.close()
     }
 }
 
-impl<T> Sink for BulkSenderInner<T>
+impl<T> Sink<T> for BulkSenderInner<T>
 where
     T: Send,
 {
-    type SinkItem = T;
-    type SinkError = Error;
+    type Error = Error;
 
-    fn start_send(
-        &mut self,
-        item: Self::SinkItem,
-    ) -> Result<AsyncSink<Self::SinkItem>, Self::SinkError> {
+    fn start_send(&mut self, item: T) -> Result<(), Self::Error> {
         self.0
             .as_ref()
             .map(|tx| match tx.try_send(item) {
-                Ok(()) => Ok(AsyncSink::Ready),
-                Err(TrySendError::Full(item)) => Ok(AsyncSink::NotReady(item)),
+                Ok(()) => Ok(Poll::Ready),
+                Err(TrySendError::Full(item)) => Ok(Poll::Pending(item)),
                 Err(TrySendError::Disconnected(_)) => Err(error::request(Disconnected)),
             })
             .unwrap_or_else(|| Err(error::request(Disconnected)))
     }
 
-    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-        Ok(Async::Ready(()))
+    fn poll_flush(&mut self) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok())
     }
 
-    fn close(&mut self) -> Poll<(), Self::SinkError> {
+    fn poll_close(&mut self) -> Poll<Result<(), Self::Error>> {
         self.0 = None;
-        Ok(Async::Ready(()))
+        Poll::Ready(Ok())
     }
 }
 
@@ -397,10 +389,9 @@ impl<TResponse> Stream for BulkReceiver<TResponse>
 where
     TResponse: Send,
 {
-    type Item = TResponse;
-    type Error = Error;
+    type Item = Result<TResponse, Error>;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_next(&mut self) -> Poll<Option<Self::Item>> {
         self.rx.poll()
     }
 }
@@ -409,15 +400,14 @@ impl<T> Stream for BulkReceiverInner<T>
 where
     T: Send,
 {
-    type Item = T;
-    type Error = Error;
+    type Item = Result<T, Error>;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll_next(&mut self) -> Poll<Option<Self::Item>> {
         match self.0.try_recv() {
-            Ok(item) => Ok(Async::Ready(Some(item))),
-            Err(TryRecvError::Empty) => Ok(Async::NotReady),
+            Ok(item) => Poll::Ready(Some(Ok(item))),
+            Err(TryRecvError::Empty) => Poll::Pending,
             // If the channel is disconnected, then we're finished processing
-            Err(TryRecvError::Disconnected) => Ok(Async::Ready(None)),
+            Err(TryRecvError::Disconnected) => Poll::Ready(None),
         }
     }
 }

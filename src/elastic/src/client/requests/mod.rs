@@ -11,8 +11,8 @@ use std::{
 
 use fluent_builder::SharedFluentBuilder;
 use futures::{
+    task::Poll,
     Future,
-    Poll,
 };
 
 use tokio_threadpool::ThreadPool;
@@ -261,14 +261,14 @@ impl<TRequest> RequestBuilder<AsyncSender, TRequest> {
 
 /** A future returned by calling `send`. */
 pub struct Pending<T> {
-    inner: Box<dyn Future<Item = T, Error = Error> + Send>,
+    inner: Box<dyn Future<Output = Result<T, Error>> + Send>,
     _ph: PhantomData<T>,
 }
 
 impl<T> Pending<T> {
     fn new<F>(fut: F) -> Self
     where
-        F: Future<Item = T, Error = Error> + Send + 'static,
+        F: Future<Output = Result<T, Error>> + Send + 'static,
     {
         Pending {
             inner: Box::new(fut),
@@ -278,10 +278,9 @@ impl<T> Pending<T> {
 }
 
 impl<T> Future for Pending<T> {
-    type Item = T;
-    type Error = Error;
+    type Output = Result<T, Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Self::Output> {
         self.inner.poll()
     }
 }

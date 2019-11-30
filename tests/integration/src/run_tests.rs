@@ -18,7 +18,7 @@ use term_painter::{
 };
 
 pub type TestResult = bool;
-pub type Test = Box<dyn Fn(AsyncClient) -> Box<dyn Future<Item = TestResult, Error = ()>>>;
+pub type Test = Box<dyn Fn(AsyncClient) -> Box<dyn Future<Output = Result<TestResult, ()>>>>;
 
 pub trait IntegrationTest {
     #[doc(hidden)]
@@ -29,7 +29,7 @@ pub trait IntegrationTest {
     type Response: Debug;
 
     /// Pre-test preparation.
-    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Item = (), Error = Error>>;
+    fn prepare(&self, client: AsyncClient) -> Box<dyn Future<Output = Result<(), Error>>>;
 
     /// Check an error during preparation and possibly continue.
     fn prepare_err(&self, err: &Error) -> bool {
@@ -40,8 +40,10 @@ pub trait IntegrationTest {
     }
 
     /// Execute requests.
-    fn request(&self, client: AsyncClient)
-        -> Box<dyn Future<Item = Self::Response, Error = Error>>;
+    fn request(
+        &self,
+        client: AsyncClient,
+    ) -> Box<dyn Future<Output = Result<Self::Response, Error>>>;
 
     /// Check the response.
     fn assert_ok(&self, _res: &Self::Response) -> bool {
@@ -54,7 +56,7 @@ pub trait IntegrationTest {
     }
 }
 
-pub fn test<T>(client: AsyncClient, test: T) -> Box<dyn Future<Item = TestResult, Error = ()>>
+pub fn test<T>(client: AsyncClient, test: T) -> Box<dyn Future<Output = Result<TestResult, ()>>>
 where
     T: IntegrationTest + Send + 'static,
 {
@@ -110,7 +112,7 @@ fn call_future(
     client: AsyncClient,
     cases: impl IntoIterator<Item = Test>,
     max_concurrent_tests: usize,
-) -> Box<dyn Future<Item = Vec<TestResult>, Error = ()>> {
+) -> Box<dyn Future<Output = Result<Vec<TestResult>, ()>>> {
     let all_tests = cases
         .into_iter()
         .map(move |t| t(client.clone()))

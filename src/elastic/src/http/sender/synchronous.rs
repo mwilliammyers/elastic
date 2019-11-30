@@ -7,6 +7,8 @@ use std::{
     sync::Arc,
 };
 
+use futures::TryFutureExt;
+
 use crate::{
     endpoints::Endpoint,
     error::{

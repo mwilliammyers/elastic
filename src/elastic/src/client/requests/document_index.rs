@@ -4,7 +4,7 @@ Builders for [index requests][docs-index].
 [docs-index]: https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-index_.html
 */
 
-use futures::Future;
+use futures::TryFutureExt;
 use serde::Serialize;
 use serde_json;
 

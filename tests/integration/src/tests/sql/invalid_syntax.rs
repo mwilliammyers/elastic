@@ -16,7 +16,7 @@ test! {
     type Response = SqlQueryResponse;
 
     // Ensure the index doesn't exist
-    fn prepare(&self, _client: AsyncClient) -> Box<dyn Future<Item = (), Error = Error>> {
+    fn prepare(&self, _client: AsyncClient) -> Box<dyn Future<Output = Result<(), Error>>> {
         Box::new(future::ok(()))
     }
 
@@ -24,7 +24,7 @@ test! {
     fn request(
         &self,
         client: AsyncClient,
-    ) -> Box<dyn Future<Item = Self::Response, Error = Error>> {
+    ) -> Box<dyn Future<Output = Result<Self::Response, Error>>> {
         let res = client.sql_query("select").send();
 
         Box::new(res)
